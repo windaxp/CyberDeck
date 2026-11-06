@@ -6,8 +6,21 @@ import random
 import shutil
 import glob
 
-# --- ЖЕСТКИЕ ПУТИ ---
-BASE_DIR = "/sdcard/Download/CyberDeck"
+# --- УМНОЕ ОПРЕДЕЛЕНИЕ ПУТЕЙ (WINDOWS / ANDROID) ---
+def get_base_dir():
+    if os.name == 'nt':  # Если запущено на Windows
+        # Ищем Рабочий стол (Desktop) текущего пользователя
+        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        if not os.path.exists(desktop):
+            desktop = os.path.expanduser("~") # Если рабочего стола нет, кидаем в корень пользователя
+        return os.path.join(desktop, "CyberDeck")
+    elif os.path.exists("/sdcard"):  # Если запущено на Android (Termux)
+        return "/sdcard/Download/CyberDeck"
+    else:  # Если запущено на Linux / Mac
+        return os.path.join(os.path.expanduser("~"), "CyberDeck")
+
+# Теперь BASE_DIR зависит от того, где запущен скрипт
+BASE_DIR = get_base_dir()
 SCREAMS_DIR = os.path.join(BASE_DIR, "screams")
 LOGS_DIR = os.path.join(BASE_DIR, "logs")
 SCREENSHOTS_DIR = os.path.join(BASE_DIR, "screenshots")
@@ -44,78 +57,73 @@ def check_connection():
             return True
     return False
 
-# --- ФУНКЦИИ ЗАПУСКА СКРИПТОВ ИЗ ПАПКИ SCRIPTS ---
-def launch_neofetch():
-    script_path = os.path.join(SCRIPTS_DIR, "neofetch.py")
-    if os.path.exists(script_path):
-        subprocess.run(["python", script_path])
-    else:
-        print(f"\n{C.F}[!] Ошибка: Файл scripts/neofetch.py не найден!{C.E}")
-        input("Нажми Enter...")
+# --- УНИВЕРСАЛЬНЫЙ ДЕБЛОАТ ---
+def debloat():
+    print(f"\n{C.CY}[*] Определяю бренд устройства...{C.E}")
+    brand_raw = adb("shell getprop ro.product.brand").strip().lower()
+    model = adb("shell getprop ro.product.model").strip()
+    
+    DEBLOAT_DB = {
+        "xiaomi": ["com.miui.msa.global", "com.miui.analytics", "com.xiaomi.mipicks", "com.miui.systemAdSolution", "com.xiaomi.discover", "com.xiaomi.joyose"],
+        "samsung": ["com.samsung.android.app.spage", "com.samsung.android.bixby.agent", "com.samsung.android.game.gamehome", "com.samsung.android.app.tips", "com.samsung.android.mateagent"],
+        "tecno": ["com.transsion.buzz", "com.transsion.phoenix", "com.transsion.faceid", "com.transsion.phonemaster", "com.transsion.carlcare"],
+        "infinix": ["com.transsion.buzz", "com.transsion.phoenix", "com.transsion.faceid", "com.transsion.phonemaster", "com.transsion.carlcare"],
+        "generic": ["com.google.android.apps.wellbeing", "com.google.android.feedback"]
+    }
 
-def launch_all_in_one():
-    script_path = os.path.join(SCRIPTS_DIR, "all_in_one.py")
-    if os.path.exists(script_path):
-        print(f"\n{C.CY}[*] Запускаю ALL-IN-ONE...{C.E}")
-        time.sleep(1)
-        subprocess.run(["python", script_path])
-    else:
-        print(f"\n{C.F}[!] Ошибка: Файл scripts/all_in_one.py не найден!{C.E}")
-        input("Нажми Enter...")
+    brand_key = "generic"
+    if any(x in brand_raw for x in ["redmi", "poco", "xiaomi"]): brand_key = "xiaomi"
+    elif "samsung" in brand_raw: brand_key = "samsung"
+    elif "tecno" in brand_raw: brand_key = "tecno"
+    elif "infinix" in brand_raw: brand_key = "infinix"
 
-def launch_tts():
-    script_path = os.path.join(SCRIPTS_DIR, "tts.py")
-    if os.path.exists(script_path):
-        subprocess.run(["python", script_path])
-    else:
-        print(f"\n{C.F}[!] Ошибка: Файл scripts/tts.py не найден!{C.E}")
-        input("Нажми Enter...")
+    pkgs = DEBLOAT_DB[brand_key]
+    
+    print(f"{C.G}[+] Устройство: {brand_raw.capitalize()} {model}{C.E}")
+    print(f"{C.W}[*] Найдено пакетов: {len(pkgs)}{C.E}")
+    
+    if input(f"{C.F}Удаляем? (y/n): {C.E}").lower() != 'y':
+        print(f"{C.W}[i] Отменено.{C.E}"); input(); return
 
-def launch_app_manager():
-    script_path = os.path.join(SCRIPTS_DIR, "app_manager.py")
-    if os.path.exists(script_path):
-        subprocess.run(["python", script_path])
-    else:
-        print(f"\n{C.F}[!] Ошибка: Файл scripts/app_manager.py не найден!{C.E}")
-        input("Нажми Enter...")
+    success_count = 0
+    for p in pkgs:
+        print(f"  Удаляю: {p}...", end="", flush=True)
+        res = adb(f"shell pm uninstall --user 0 {p}")
+        if "Success" in res:
+            print(f" {C.G}[OK]{C.E}"); success_count += 1
+        else:
+            print(f" {C.W}[НЕТ]{C.E}")
+            
+    print(f"\n{C.G}[+] Удалено: {success_count}/{len(pkgs)}{C.E}")
+    input("Нажми Enter...")
 
-# --- ВСТРОЕННЫЙ ПРОВОДНИК ---
+# --- ЗАПУСК СКРИПТОВ ---
+def launch_script(script_name):
+    script_path = os.path.join(SCRIPTS_DIR, script_name)
+    if os.path.exists(script_path): subprocess.run([sys.executable, script_path])
+    else: print(f"\n{C.F}[!] Файл scripts/{script_name} не найден!{C.E}"); input()
+
 def file_explorer():
     current_dir = BASE_DIR
     while True:
         clear()
-        print(f"{C.CY}{C.BOLD}=== 📁 ВСТРОЕННЫЙ ПРОВОДНИК ==={C.E}")
-        print(f"{C.W}Текущая папка: {current_dir}{C.E}\n")
-        
+        print(f"{C.CY}{C.BOLD}=== 📁 ПРОВОДНИК ==={C.E}")
+        print(f"{C.W}Папка: {current_dir}{C.E}\n")
         try:
             items = os.listdir(current_dir)
             items.sort(key=lambda x: (not os.path.isdir(os.path.join(current_dir, x)), x.lower()))
         except PermissionError:
-            print(f"{C.F}[!] Нет доступа к этой папке.{C.E}")
-            input("Нажми Enter...")
-            current_dir = BASE_DIR
-            continue
+            print(f"{C.F}[!] Нет доступа.{C.E}"); input(); current_dir = BASE_DIR; continue
             
-        if not items:
-            print(f"{C.W}Папка пуста.{C.E}")
-            
+        if not items: print(f"{C.W}Пусто.{C.E}")
         for i, item in enumerate(items, 1):
             path = os.path.join(current_dir, item)
-            if os.path.isdir(path):
-                print(f"  {C.B}[{i}] 📁 {item}/{C.E}")
+            if os.path.isdir(path): print(f"  {C.B}[{i}] 📁 {item}/{C.E}")
             else:
-                try:
-                    size = os.path.getsize(path) / 1024
-                    print(f"  {C.G}[{i}] 📄 {item} ({size:.1f} KB){C.E}")
-                except OSError:
-                    print(f"  {C.G}[{i}] 📄 {item}{C.E}")
+                try: print(f"  {C.G}[{i}] 📄 {item} ({os.path.getsize(path)/1024:.1f} KB){C.E}")
+                except OSError: print(f"  {C.G}[{i}] 📄 {item}{C.E}")
                 
-        print(f"\n{C.W}Команды:{C.E}")
-        print(f"  [номер] - зайти в папку")
-        print(f"  {C.F}del [номер]{C.E} - удалить файл")
-        print(f"  {C.CY}cd [путь]{C.E} - перейти по пути")
-        print(f"  [0] - вернуться в главное меню")
-        
+        print(f"\n{C.W}[номер] - зайти, del [номер] - удалить, cd [путь] - перейти, 0 - выход{C.E}")
         cmd = input(f"\n{C.BOLD}Проводник > {C.E}").strip().split()
         
         if not cmd: continue
@@ -123,64 +131,44 @@ def file_explorer():
         elif cmd[0].lower() == 'cd' and len(cmd) > 1:
             new_dir = " ".join(cmd[1:])
             if os.path.exists(new_dir) and os.path.isdir(new_dir): current_dir = new_dir
-            else:
-                print(f"{C.F}[!] Путь не найден.{C.E}")
-                time.sleep(1)
+            else: print(f"{C.F}[!] Не найдено.{C.E}"); time.sleep(1)
         elif cmd[0].lower() == 'del' and len(cmd) > 1:
             try:
                 idx = int(cmd[1]) - 1
                 if 0 <= idx < len(items):
                     target = os.path.join(current_dir, items[idx])
-                    if os.path.isdir(target): print(f"{C.F}[!] Это папка. Удалять нельзя.{C.E}")
-                    else:
-                        os.remove(target)
-                        print(f"{C.G}[+] Файл {items[idx]} удален!{C.E}")
-                else: print(f"{C.F}[!] Неверный номер.{C.E}")
-            except ValueError: print(f"{C.F}[!] Ошибка ввода.{C.E}")
+                    if os.path.isdir(target): print(f"{C.F}[!] Это папка.{C.E}")
+                    else: os.remove(target); print(f"{C.G}[+] Удален: {items[idx]}{C.E}")
+            except: print(f"{C.F}[!] Ошибка.{C.E}")
             time.sleep(1)
         elif cmd[0].isdigit():
             idx = int(cmd[0]) - 1
             if 0 <= idx < len(items):
                 target = os.path.join(current_dir, items[idx])
                 if os.path.isdir(target): current_dir = target
-                else:
-                    print(f"{C.W}[i] Это файл.{C.E}")
-                    time.sleep(1)
 
-# --- СИСТЕМНЫЕ ФУНКЦИИ ---
 def cleaner():
-    clear()
-    print(f"{C.F}{C.BOLD}=== 🧹 СИСТЕМА ОЧИСТКИ CYBERDECK ==={C.E}\n")
+    clear(); print(f"{C.F}{C.BOLD}=== 🧹 ОЧИСТКА ==={C.E}\n")
     screens = glob.glob(os.path.join(SCREENSHOTS_DIR, "*"))
     if screens:
         for f in screens: os.remove(f)
         print(f"{C.G}[+] Удалено скриншотов: {len(screens)}{C.E}")
-    else: print(f"{C.W}[i] Папка screenshots уже пуста.{C.E}")
-
     logs = glob.glob(os.path.join(LOGS_DIR, "*"))
     if logs:
         for f in logs: os.remove(f)
-        print(f"{C.G}[+] Удалено файлов логов: {len(logs)}{C.E}")
-    else: print(f"{C.W}[i] Папка logs уже пуста.{C.E}")
-
-    print(f"\n{C.CY}[*] Отправляю команду на очистку кэша Android...{C.E}")
-    adb("shell pm trim-caches 999G")
-    print(f"{C.G}[+] Кэш системы очищен!{C.E}")
+        print(f"{C.G}[+] Удалено логов: {len(logs)}{C.E}")
+    adb("shell pm trim-caches 999G"); print(f"{C.G}[+] Кэш Android очищен!{C.E}")
     input("\nНажми Enter...")
 
 def backup_current_script():
     timestamp = time.strftime("%Y%m%d_%H%M%S")
-    backup_name = f"cyberdeck_backup_{timestamp}.py"
-    dest = os.path.join(BACKUP_DIR, backup_name)
-    try:
-        shutil.copy(__file__, dest)
-        print(f"\n{C.G}[+] Бэкап создан: backup/{backup_name}{C.E}")
-    except Exception as e:
-        print(f"\n{C.F}[!] Ошибка: {e}{C.E}")
+    dest = os.path.join(BACKUP_DIR, f"cyberdeck_backup_{timestamp}.py")
+    try: shutil.copy(__file__, dest); print(f"\n{C.G}[+] Бэкап: backup/{os.path.basename(dest)}{C.E}")
+    except Exception as e: print(f"\n{C.F}[!] Ошибка: {e}{C.E}")
     input("Нажми Enter...")
 
 def get_battery():
-    print(f"\n{C.CY}[*] Считываю данные батареи...{C.E}")
+    print(f"\n{C.CY}[*] Батарея...{C.E}")
     out = adb("shell dumpsys battery | grep -E 'level|status|temperature'")
     if out: print(f"{C.G}{out}{C.E}")
     input("Нажми Enter...")
@@ -188,58 +176,44 @@ def get_battery():
 def save_logs():
     filename = f"logcat_{int(time.time())}.txt"
     filepath = os.path.join(LOGS_DIR, filename)
-    print(f"\n{C.CY}[*] Собираю системные логи Android...{C.E}")
+    print(f"\n{C.CY}[*] Собираю логи...{C.E}")
     logs = adb("logcat -d -v threadtime -t 1000")
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.write(logs)
-    print(f"{C.G}[+] Логи сохранены в: logs/{filename}{C.E}")
+    with open(filepath, "w", encoding="utf-8") as f: f.write(logs)
+    print(f"{C.G}[+] Логи: logs/{filename}{C.E}")
     input("Нажми Enter...")
 
 def take_screenshot():
     filename = f"screen_{int(time.time())}.png"
     filepath = os.path.join(SCREENSHOTS_DIR, filename)
-    print(f"\n{C.CY}[*] Делаю скриншот...{C.E}")
+    print(f"\n{C.CY}[*] Скриншот...{C.E}")
+    # Временный путь всегда на телефоне (Android), а сохранение - по BASE_DIR
     adb("shell screencap -p /sdcard/tmp_cyber.png")
-    adb(f"pull /sdcard/tmp_cyber.png {filepath}")
+    adb(f"pull /sdcard/tmp_cyber.png \"{filepath}\"")
     adb("shell rm /sdcard/tmp_cyber.png")
-    print(f"{C.G}[+] Скриншот сохранен: screenshots/{filename}{C.E}")
+    print(f"{C.G}[+] Сохранен: screenshots/{filename}{C.E}")
     input("Нажми Enter...")
 
 def play_screamer():
     if not os.path.exists(SCREAMS_DIR): return
     files = [f for f in os.listdir(SCREAMS_DIR) if f.endswith('.mp3')]
-    if not files:
-        print(f"\n{C.F}[!] В папке 'screams' нет MP3 файлов!{C.E}")
-        input("Нажми Enter...")
-        return
+    if not files: print(f"\n{C.F}[!] Нет MP3 в 'screams'!{C.E}"); input(); return
     file_to_play = random.choice(files)
     local_path = os.path.join(SCREAMS_DIR, file_to_play)
     remote_path = f"/sdcard/Download/{file_to_play}"
-    print(f"\n{C.F}{C.BOLD}[!] ЗАГРУЖАЮ СКРИМЕР: {file_to_play}{C.E}")
+    print(f"\n{C.F}[!] СКРИМЕР: {file_to_play}{C.E}")
     adb(f"push \"{local_path}\" \"{remote_path}\"")
     for _ in range(15): adb("shell input keyevent 24")
     adb(f'shell am start -a android.intent.action.VIEW -d file://{remote_path} -t audio/mp3')
-    print(f"{C.G}[+] Скример отработал!{C.E}")
-    input("Нажми Enter...")
-
-def debloat():
-    print(f"\n{C.W}[*] Базовая чистка рекламы...{C.E}")
-    pkgs = ["com.miui.msa.global", "com.miui.analytics", "com.xiaomi.mipicks", "com.miui.systemAdSolution"]
-    for p in pkgs:
-        res = adb(f"shell pm uninstall --user 0 {p}")
-        print(f"  {C.G if 'Success' in res else C.W}{p}{C.E}")
-    input("Нажми Enter...")
+    print(f"{C.G}[+] Отработал!{C.E}"); input("Нажми Enter...")
 
 def reboot_phone(mode="normal"):
     print(f"\n{C.F}[*] Перезагрузка ({mode})...{C.E}")
     if mode == "recovery": adb("reboot recovery")
-    elif mode == "fastboot": adb("reboot bootloader")
     elif mode == "poweroff": adb("shell reboot -p")
     else: adb("reboot")
     sys.exit()
 
 # --- МЕНЮ ---
-
 def main():
     setup_folders()
     clear()
@@ -250,21 +224,21 @@ def main():
     print("   ██║       ╚██╔╝  ██╔══██╗██╔══╝  ██╔══██╗██║  ██║██╔══╝  ██║     ██╔═██╗ ")
     print("   ╚██████╗   ██║   ██████╔╝███████╗██�  ██║██████╔╝███████╗╚██████╗██║  ██╗")
     print("    ╚═════╝   ╚═╝   ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═════╝ ╚══════╝ ╚═════╝╚═╝  ╚═╝")
-    print(f"              [ CYBERDECK v9.3 - MAIN HUB ]{C.E}\n")
+    print(f"          [ CYBERDECK v10.0 - CROSS-PLATFORM ]{C.E}")
+    print(f"{C.W}[i] Рабочая папка: {BASE_DIR}{C.E}\n")
 
     if not check_connection():
-        print(f"{C.F}[!] ОШИБКА: Телефон не подключен! Сделай adb connect.{C.E}")
-        sys.exit()
+        print(f"{C.F}[!] ОШИБКА: Телефон не подключен! Сделай adb connect.{C.E}"); sys.exit()
     
     print(f"{C.G}[+] Связь установлена.{C.E}")
 
     while True:
         print(f"\n{C.B}╔════════════════════════════════════════╗{C.E}")
-        print(f"{C.CY}{C.BOLD}║ 1. 🖥️  NEOFETCH (Инфо о телефоне)      ║{C.E}")
+        print(f"{C.CY}{C.BOLD}║ 1. 🖥️  NEOFETCH                        ║{C.E}")
         print(f"{C.B}║ 2. Инфо: Батарея                       ║{C.E}")
         print(f"{C.CY}║ 3. Шпион: Сохранить ЛОГИ АНДРОИДА      ║{C.E}")
         print(f"{C.CY}║ 4. Шпион: Сделать скриншот             ║{C.E}")
-        print(f"{C.W}║ 5. Система: Деблоат (Удалить рекламу)  ║{C.E}")
+        print(f"{C.W}║ 5. Система: УНИВЕРСАЛЬНЫЙ ДЕБЛОАТ      ║{C.E}")
         print(f"{C.F}║ 6. Пранк: АУДИО-СКРИМЕР                ║{C.E}")
         print(f"{C.F}║ 7. Питание: Выключение                 ║{C.E}")
         print(f"{C.F}║ 8. Питание: Recovery                   ║{C.E}")
@@ -280,7 +254,7 @@ def main():
 
         choice = input(f"\n{C.BOLD}root@cyberdeck:~# {C.E}")
 
-        if choice == '1': launch_neofetch()
+        if choice == '1': launch_script("neofetch.py")
         elif choice == '2': get_battery()
         elif choice == '3': save_logs()
         elif choice == '4': take_screenshot()
@@ -288,12 +262,12 @@ def main():
         elif choice == '6': play_screamer()
         elif choice == '7': reboot_phone("poweroff")
         elif choice == '8': reboot_phone("recovery")
-        elif choice == '9': launch_all_in_one()
+        elif choice == '9': launch_script("all_in_one.py")
         elif choice == '10': backup_current_script()
         elif choice == '11': cleaner()
         elif choice == '12': file_explorer()
-        elif choice == '13': launch_tts()
-        elif choice == '14': launch_app_manager()
+        elif choice == '13': launch_script("tts.py")
+        elif choice == '14': launch_script("app_manager.py")
         elif choice == '0':
             print(f"\n{C.F}[!] Отключение...{C.E}")
             break
