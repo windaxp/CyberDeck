@@ -2,7 +2,7 @@
 
 **CyberDeck** — это мощный модульный мультитул для управления Android-устройствами через ADB прямо из Termux. Твой личный цифровой швейцарский нож, объединяющий полезные утилиты, системную диагностику и безбашенные пранки.
 
-![Version](https://img.shields.io/badge/version-11-red)
+![Version](https://img.shields.io/badge/version-V11-red)
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Termux-blue)
 ![Python](https://img.shields.io/badge/python-3.x-yellow)
 
