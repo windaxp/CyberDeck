@@ -6,20 +6,11 @@ import random
 import shutil
 import glob
 
-# --- УМНОЕ ОПРЕДЕЛЕНИЕ ПУТЕЙ (WINDOWS / ANDROID) ---
+# --- 📁 ПАПКИ ПРЯМО В КОРНЕ СО СКРИПТОМ ---
 def get_base_dir():
-    if os.name == 'nt':  # Если запущено на Windows
-        # Ищем Рабочий стол (Desktop) текущего пользователя
-        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-        if not os.path.exists(desktop):
-            desktop = os.path.expanduser("~") # Если рабочего стола нет, кидаем в корень пользователя
-        return os.path.join(desktop, "CyberDeck")
-    elif os.path.exists("/sdcard"):  # Если запущено на Android (Termux)
-        return "/sdcard/Download/CyberDeck"
-    else:  # Если запущено на Linux / Mac
-        return os.path.join(os.path.expanduser("~"), "CyberDeck")
+    # Папка, где физически лежит cyberdeck.py (корень)
+    return os.path.dirname(os.path.abspath(__file__))
 
-# Теперь BASE_DIR зависит от того, где запущен скрипт
 BASE_DIR = get_base_dir()
 SCREAMS_DIR = os.path.join(BASE_DIR, "screams")
 LOGS_DIR = os.path.join(BASE_DIR, "logs")
@@ -27,10 +18,12 @@ SCREENSHOTS_DIR = os.path.join(BASE_DIR, "screenshots")
 SCRIPTS_DIR = os.path.join(BASE_DIR, "scripts")
 BACKUP_DIR = os.path.join(BASE_DIR, "backup")
 
+# 🔧 Создаём ВСЕ папки в корне, если их нет
 def setup_folders():
-    for folder in [BASE_DIR, SCREAMS_DIR, LOGS_DIR, SCREENSHOTS_DIR, SCRIPTS_DIR, BACKUP_DIR]:
+    for folder in [SCREAMS_DIR, LOGS_DIR, SCREENSHOTS_DIR, SCRIPTS_DIR, BACKUP_DIR]:
         if not os.path.exists(folder):
             os.makedirs(folder)
+            print(f"[+] Создана папка: {os.path.basename(folder)}/")
 
 # --- ЦВЕТА ---
 class C:
@@ -62,7 +55,7 @@ def debloat():
     print(f"\n{C.CY}[*] Определяю бренд устройства...{C.E}")
     brand_raw = adb("shell getprop ro.product.brand").strip().lower()
     model = adb("shell getprop ro.product.model").strip()
-    
+
     DEBLOAT_DB = {
         "xiaomi": ["com.miui.msa.global", "com.miui.analytics", "com.xiaomi.mipicks", "com.miui.systemAdSolution", "com.xiaomi.discover", "com.xiaomi.joyose"],
         "samsung": ["com.samsung.android.app.spage", "com.samsung.android.bixby.agent", "com.samsung.android.game.gamehome", "com.samsung.android.app.tips", "com.samsung.android.mateagent"],
@@ -78,10 +71,10 @@ def debloat():
     elif "infinix" in brand_raw: brand_key = "infinix"
 
     pkgs = DEBLOAT_DB[brand_key]
-    
+
     print(f"{C.G}[+] Устройство: {brand_raw.capitalize()} {model}{C.E}")
     print(f"{C.W}[*] Найдено пакетов: {len(pkgs)}{C.E}")
-    
+
     if input(f"{C.F}Удаляем? (y/n): {C.E}").lower() != 'y':
         print(f"{C.W}[i] Отменено.{C.E}"); input(); return
 
@@ -93,15 +86,18 @@ def debloat():
             print(f" {C.G}[OK]{C.E}"); success_count += 1
         else:
             print(f" {C.W}[НЕТ]{C.E}")
-            
+
     print(f"\n{C.G}[+] Удалено: {success_count}/{len(pkgs)}{C.E}")
     input("Нажми Enter...")
 
-# --- ЗАПУСК СКРИПТОВ ---
+# --- ЗАПУСК СКРИПТОВ ТОЛЬКО ИЗ scripts/ ---
 def launch_script(script_name):
-    script_path = os.path.join(SCRIPTS_DIR, script_name)
-    if os.path.exists(script_path): subprocess.run([sys.executable, script_path])
-    else: print(f"\n{C.F}[!] Файл scripts/{script_name} не найден!{C.E}"); input()
+    path = os.path.join(SCRIPTS_DIR, script_name)
+    if os.path.exists(path):
+        subprocess.run([sys.executable, path])
+    else:
+        print(f"\n{C.F}[!] Скрипт scripts/{script_name} не найден!{C.E}")
+        input()
 
 def file_explorer():
     current_dir = BASE_DIR
@@ -114,7 +110,7 @@ def file_explorer():
             items.sort(key=lambda x: (not os.path.isdir(os.path.join(current_dir, x)), x.lower()))
         except PermissionError:
             print(f"{C.F}[!] Нет доступа.{C.E}"); input(); current_dir = BASE_DIR; continue
-            
+
         if not items: print(f"{C.W}Пусто.{C.E}")
         for i, item in enumerate(items, 1):
             path = os.path.join(current_dir, item)
@@ -122,10 +118,10 @@ def file_explorer():
             else:
                 try: print(f"  {C.G}[{i}] 📄 {item} ({os.path.getsize(path)/1024:.1f} KB){C.E}")
                 except OSError: print(f"  {C.G}[{i}] 📄 {item}{C.E}")
-                
+
         print(f"\n{C.W}[номер] - зайти, del [номер] - удалить, cd [путь] - перейти, 0 - выход{C.E}")
         cmd = input(f"\n{C.BOLD}Проводник > {C.E}").strip().split()
-        
+
         if not cmd: continue
         if cmd[0] == '0': break
         elif cmd[0].lower() == 'cd' and len(cmd) > 1:
@@ -173,6 +169,62 @@ def get_battery():
     if out: print(f"{C.G}{out}{C.E}")
     input("Нажми Enter...")
 
+# --- 🌡️ ТЕМПЕРАТУРА ---
+def get_temperature():
+    print(f"\n{C.CY}[*] Температура батареи...{C.E}")
+
+    temp_c = None
+    source = "dumpsys battery"
+
+    out = adb("shell dumpsys battery")
+    for line in out.split('\n'):
+        line = line.strip()
+        if line.startswith("temperature:"):
+            try:
+                raw = line.split(":", 1)[1].strip()
+                temp_c = int(raw) / 10.0
+                break
+            except ValueError:
+                pass
+
+    if temp_c is None:
+        source = "/sys/class/power_supply/battery/temp"
+        raw = adb("shell cat /sys/class/power_supply/battery/temp").strip()
+        try:
+            temp_c = int(raw) / 10.0
+        except ValueError:
+            temp_c = None
+
+    if temp_c is None:
+        source = "/sys/class/thermal/thermal_zone0/temp"
+        raw = adb("shell cat /sys/class/thermal/thermal_zone0/temp").strip()
+        try:
+            v = int(raw)
+            temp_c = v / 1000.0 if v > 1000 else v / 10.0
+        except ValueError:
+            temp_c = None
+
+    if temp_c is None:
+        print(f"{C.F}[!] Не удалось получить температуру ни одним способом.{C.E}")
+        input("Нажми Enter...")
+        return
+
+    print(f"{C.G}[+] Батарея: {C.BOLD}{temp_c:.1f}°C{C.E}")
+    print(f"{C.W}[i] Источник: {source}{C.E}\n")
+
+    if temp_c < 15:
+        print(f"{C.B}[❄️]  Холодно — батарея может работать хуже.{C.E}")
+    elif temp_c < 35:
+        print(f"{C.G}[✅] Нормально — всё в порядке.{C.E}")
+    elif temp_c < 45:
+        print(f"{C.W}[⚠️]  Тепло — лучше не нагружать.{C.E}")
+    elif temp_c < 55:
+        print(f"{C.F}[🔥] ГОРЯЧО — сними чехол, не играй.{C.E}")
+    else:
+        print(f"{C.F}{C.BOLD}[💀] КРИТИЧНО — выключи и дай остыть!{C.E}")
+
+    input("Нажми Enter...")
+
 def save_logs():
     filename = f"logcat_{int(time.time())}.txt"
     filepath = os.path.join(LOGS_DIR, filename)
@@ -186,7 +238,6 @@ def take_screenshot():
     filename = f"screen_{int(time.time())}.png"
     filepath = os.path.join(SCREENSHOTS_DIR, filename)
     print(f"\n{C.CY}[*] Скриншот...{C.E}")
-    # Временный путь всегда на телефоне (Android), а сохранение - по BASE_DIR
     adb("shell screencap -p /sdcard/tmp_cyber.png")
     adb(f"pull /sdcard/tmp_cyber.png \"{filepath}\"")
     adb("shell rm /sdcard/tmp_cyber.png")
@@ -222,14 +273,14 @@ def main():
     print("   ██╔════╝╚██╗ ██╔╝██╔══██╗██╔════╝██╔══██╗██╔══██╗██╔════╝██╔════╝██║ ██╔╝")
     print("   ██║      ╚████╔╝ ██████╔╝█████╗  ██████╔╝██║  ██║█████╗  ██║     █████╔╝ ")
     print("   ██║       ╚██╔╝  ██╔══██╗██╔══╝  ██╔══██╗██║  ██║██╔══╝  ██║     ██╔═██╗ ")
-    print("   ╚██████╗   ██║   ██████╔╝███████╗██�  ██║██████╔╝███████╗╚██████╗██║  ██╗")
+    print("   ╚██████╗   ██║   ██████╔╝███████╗██║  ██║██████╔╝███████╗╚██████╗██║  ██╗")
     print("    ╚═════╝   ╚═╝   ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═════╝ ╚══════╝ ╚═════╝╚═╝  ╚═╝")
-    print(f"          [ CYBERDECK v10.0 - CROSS-PLATFORM ]{C.E}")
-    print(f"{C.W}[i] Рабочая папка: {BASE_DIR}{C.E}\n")
+    print(f"          [ CYBERDECK v11.3 - CROSS-PLATFORM ]{C.E}")
+    print(f"{C.W}[i] Корень: {BASE_DIR}{C.E}\n")
 
     if not check_connection():
         print(f"{C.F}[!] ОШИБКА: Телефон не подключен! Сделай adb connect.{C.E}"); sys.exit()
-    
+
     print(f"{C.G}[+] Связь установлена.{C.E}")
 
     while True:
@@ -247,8 +298,8 @@ def main():
         print(f"{C.H}║ 10. 💾 СДЕЛАТЬ БЭКАП ГЛАВНОГО СКРИПТА  ║{C.E}")
         print(f"{C.F}{C.BOLD}║ 11. 🧹 ОЧИСТИТЬ ВЕСЬ МУСОР (CLEANER)   ║{C.E}")
         print(f"{C.CY}{C.BOLD}║ 12. 📁 ВСТРОЕННЫЙ ПРОВОДНИК            ║{C.E}")
-        print(f"{C.CY}║ 13. 🔊 ГОЛОС ИЗ ТЕЛЕФОНА (TTS)         ║{C.E}")
-        print(f"{C.F}║ 14. 📦 МЕНЕДЖЕР ПРИЛОЖЕНИЙ (УДАЛЕНИЕ)  ║{C.E}")
+        print(f"{C.F}║ 13. 📦 МЕНЕДЖЕР ПРИЛОЖЕНИЙ (УДАЛЕНИЕ)  ║{C.E}")
+        print(f"{C.CY}{C.BOLD}║ 14. 🌡️  ИНФО: ТЕМПЕРАТУРА БАТАРЕИ       ║{C.E}")
         print(f"{C.B}╚════════════════════════════════════════╝{C.E}")
         print(f"{C.F} 0. Выход{C.E}")
 
@@ -266,8 +317,8 @@ def main():
         elif choice == '10': backup_current_script()
         elif choice == '11': cleaner()
         elif choice == '12': file_explorer()
-        elif choice == '13': launch_script("tts.py")
-        elif choice == '14': launch_script("app_manager.py")
+        elif choice == '13': launch_script("app_manager.py")
+        elif choice == '14': get_temperature()
         elif choice == '0':
             print(f"\n{C.F}[!] Отключение...{C.E}")
             break
